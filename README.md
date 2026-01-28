@@ -16,27 +16,16 @@
 
 ---
 
-## Step 2 — Multi-Process Skeleton
+## Step 2 — Sharded Data Loading
 
-* [ ] Spawn N processes
-* [ ] Assign `rank`, `local_rank`, `world_size`
-* [ ] One GPU per process
-* [ ] Initialize process group
-* [ ] Rank-0 logging only
-* [ ] Global barrier utility
+* [x] Deterministic dataset sharding per rank
+* [x] Same number of steps per rank
+* [x] Per-epoch seed control
+* [x] Verify no sample overlap across ranks
 
 ---
 
-## Step 3 — Sharded Data Loading
-
-* [ ] Deterministic dataset sharding per rank
-* [ ] Same number of steps per rank
-* [ ] Per-epoch seed control
-* [ ] Verify no sample overlap across ranks
-
----
-
-## Step 4 — Naive Data Parallelism (Correctness)
+## Step 3 — Naive Data Parallelism (Correctness)
 
 * [ ] Broadcast model parameters from rank 0
 * [ ] Backward pass on each rank
@@ -47,7 +36,7 @@
 
 ---
 
-## Step 5 — NCCL Backend
+## Step 4 — NCCL Backend
 
 * [ ] Use NCCL process group
 * [ ] GPU all-reduce for gradients
@@ -56,7 +45,7 @@
 
 ---
 
-## Step 6 — Autograd Hooks + Bucketing (Real DDP)
+## Step 5 — Autograd Hooks + Bucketing (Real DDP)
 
 * [ ] Register backward hooks per parameter
 * [ ] Gradient bucketing
@@ -66,7 +55,7 @@
 
 ---
 
-## Step 7 — Correctness Harness
+## Step 6 — Correctness Harness
 
 * [ ] Per-rank parameter checksum
 * [ ] Gradient norm scaling validation
@@ -75,7 +64,7 @@
 
 ---
 
-## Step 8 — Performance Tuning
+## Step 7 — Performance Tuning
 
 * [ ] Bucket size tuning
 * [ ] Gradient accumulation without early sync
@@ -84,7 +73,7 @@
 
 ---
 
-## Step 9 — Polish / Extras
+## Step 8 — Polish / Extras
 
 * [ ] Clean shutdown & error handling
 * [ ] Timeout / deadlock detection
