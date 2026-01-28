@@ -16,7 +16,7 @@
 
 ---
 
-## Step 2 — Sharded Data Loading
+## Step 2 — Sharded Data Loading ✅
 
 * [x] Deterministic dataset sharding per rank
 * [x] Same number of steps per rank
