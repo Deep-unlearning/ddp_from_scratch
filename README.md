@@ -27,12 +27,12 @@
 
 ## Step 3 — Naive Data Parallelism (Correctness)
 
-* [ ] Broadcast model parameters from rank 0
-* [ ] Backward pass on each rank
-* [ ] All-reduce gradients
-* [ ] Divide gradients by `world_size`
-* [ ] Optimizer step after synchronization
-* [ ] Checksum matches single-GPU baseline
+* [x] Broadcast model parameters from rank 0
+* [x] Backward pass on each rank
+* [x] All-reduce gradients
+* [x] Divide gradients by `world_size`
+* [x] Optimizer step after synchronization
+* [x] Checksum matches pytorch DDP
 
 ---
 
