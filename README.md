@@ -1,6 +1,6 @@
 # Distributed Training From Scratch — Roadmap Checklist
 
-## Step 1 — Single-GPU Golden Baseline ✅
+## Step 0 — Single-GPU Baseline ✅
 
 * [x] Manual training loop (no `Trainer`)
 * [x] Deterministic seed setup
@@ -11,8 +11,21 @@
 * [x] LR scheduler
 * [x] Checkpoint + resume
 * [x] Log loss, grad norm, param norm, LR, GPU memory
-* [x] Final parameter checksum (SHA-256)
-* [x] “Golden run” saved for later comparison
+
+---
+
+## Step 1 — PyTorch DDP Golden Baseline ✅
+
+* [x] Manual training loop (no `Trainer`)
+* [x] Deterministic seed setup
+* [x] Fixed tokenizer + max sequence length
+* [x] Gradient accumulation
+* [x] AMP (bf16 / fp16)
+* [x] Gradient clipping
+* [x] LR scheduler
+* [x] Checkpoint + resume
+* [x] Log loss, grad norm, param norm, LR, GPU memory
+* [x] PyTorch DDP reference run saved for comparison
 
 ---
 
@@ -32,20 +45,12 @@
 * [x] All-reduce gradients
 * [x] Divide gradients by `world_size`
 * [x] Optimizer step after synchronization
-* [x] Checksum matches pytorch DDP
+* [x] Weights match PyTorch DDP within tolerance (rtol=1e-5, atol=1e-6)
+* [x] param_norm diff < 1e-6
 
 ---
 
-## Step 4 — NCCL Backend
-
-* [ ] Use NCCL process group
-* [ ] GPU all-reduce for gradients
-* [ ] Explicit synchronization points
-* [ ] NCCL debug logging enabled
-
----
-
-## Step 5 — Autograd Hooks + Bucketing (Real DDP)
+## Step 4 — Autograd Hooks + Bucketing (Real DDP)
 
 * [ ] Register backward hooks per parameter
 * [ ] Gradient bucketing
@@ -55,7 +60,7 @@
 
 ---
 
-## Step 6 — Correctness Harness
+## Step 5 — Correctness Harness
 
 * [ ] Per-rank parameter checksum
 * [ ] Gradient norm scaling validation
@@ -64,7 +69,7 @@
 
 ---
 
-## Step 7 — Performance Tuning
+## Step 6 — Performance Tuning
 
 * [ ] Bucket size tuning
 * [ ] Gradient accumulation without early sync
@@ -73,7 +78,7 @@
 
 ---
 
-## Step 8 — Polish / Extras
+## Step 7 — Polish / Extras
 
 * [ ] Clean shutdown & error handling
 * [ ] Timeout / deadlock detection
