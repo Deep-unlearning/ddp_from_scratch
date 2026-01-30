@@ -35,6 +35,7 @@ from distributed import (
     broadcast_model, sync_gradients,
 )
 from sampler import ShardSampler
+import torch.distributed as dist
 
 # -----------------
 # Config
@@ -276,8 +277,8 @@ def main():
                             f"{SAVE_DIR}/ckpt_step_{step}.pt",
                             model, optimizer, scheduler, step, epoch,
                         )
-                
                 step += 1
+            dist.barrier()
     
     # === 9. Final checkpoint and checksum ===
     if is_main_process():
@@ -294,7 +295,7 @@ def main():
         print("Training complete.")
         print("Final checksum:", checksum)
         wandb.finish()
-    
+    dist.barrier()
     # === 10. Cleanup ===
     cleanup_distributed()
 
