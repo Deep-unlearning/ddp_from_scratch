@@ -3,4 +3,4 @@ tqdm
 datasets
 transformers
 numpy
-trackio
+wandb

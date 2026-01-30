@@ -6,11 +6,7 @@ Produces a golden run to validate custom DDP against.
 import os
 import json
 import time
-import random
-import hashlib
-from dataclasses import dataclass
 
-import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
@@ -23,106 +19,29 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
+from config import (
+    MODEL_NAME, DATASET_NAME, NUM_EPOCHS, BATCH_SIZE_SINGLE_GPU as BATCH_SIZE,
+    GRAD_ACCUM_STEPS, MAX_LENGTH, LR, WEIGHT_DECAY, WARMUP_RATIO,
+    MAX_GRAD_NORM, LOG_EVERY, SEED, USE_AMP, DTYPE,
+)
+from utils import (
+    set_seed, tensor_checksum, global_l2_norm,
+    get_gpu_peak_tflops, estimate_flops_per_step, compute_mfu,
+)
+from data import CausalLMCollator
+
 # -----------------
 # Config
 # -----------------
-MODEL_NAME = "HuggingFaceTB/SmolLM2-360M-instruct"
-DATASET_NAME = "b-mc2/sql-create-context"
-
-NUM_EPOCHS = 3
-BATCH_SIZE = 8
-GRAD_ACCUM_STEPS = 8
-MAX_LENGTH = 512
-
-LR = 2e-5
-WEIGHT_DECAY = 0.01
-WARMUP_RATIO = 0.03
-
-LOG_EVERY = 10
 SAVE_DIR = "runs/single_gpu_baseline"
-SEED = 42
-
-USE_AMP = True
-DTYPE = (
-    torch.bfloat16
-    if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
-    else torch.float16
-)
-
-# -----------------
-# Determinism
-# -----------------
-def set_seed(seed: int):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-
-# -----------------
-# Diagnostics
-# -----------------
-def tensor_checksum(model: torch.nn.Module) -> str:
-    """Stable-ish checksum of model parameters."""
-    h = hashlib.sha256()
-    with torch.no_grad():
-        for p in model.parameters():
-            t = p.detach().float().cpu().contiguous().view(-1)
-            h.update(t.numpy().tobytes())
-    return h.hexdigest()
-
-
-def global_l2_norm(tensors) -> float:
-    """Global L2 norm over a list of tensors."""
-    sq_sum = None
-    device = None
-    with torch.no_grad():
-        for t in tensors:
-            if t is None:
-                continue
-            if sq_sum is None:
-                device = t.device
-                sq_sum = torch.zeros((), device=device)
-            sq_sum += (t.float() ** 2).sum()
-    return float(torch.sqrt(sq_sum).item()) if sq_sum is not None else 0.0
-
-
-# -----------------
-# Tokenization
-# -----------------
-def make_text(example):
-    parts = []
-    for k in ["context", "question", "answer"]:
-        if k in example and example[k] is not None:
-            parts.append(str(example[k]))
-    return "\n".join(parts)
-
-
-@dataclass
-class CausalLMCollator:
-    tokenizer: AutoTokenizer
-    max_length: int
-
-    def __call__(self, batch):
-        texts = [make_text(ex) for ex in batch]
-        enc = self.tokenizer(
-            texts,
-            padding=True,
-            truncation=True,
-            max_length=self.max_length,
-            return_tensors="pt",
-        )
-        enc["labels"] = enc["input_ids"].clone()
-        return enc
 
 
 # -----------------
 # Checkpointing
 # -----------------
 def save_checkpoint(path, model, optimizer, scheduler, step, epoch):
+    import random
+    import numpy as np
     os.makedirs(os.path.dirname(path), exist_ok=True)
     torch.save(
         {
@@ -177,6 +96,21 @@ def main():
     ).to(device)
     model.train()
 
+    # Calculate model stats for MFU (formula from PyTorch blog)
+    num_params = sum(p.numel() for p in model.parameters())
+    gpu_peak_tflops = get_gpu_peak_tflops()
+    gpu_peak_flops = gpu_peak_tflops * 1e12  # Convert TFLOPs to FLOPS
+    flops_per_step = estimate_flops_per_step(
+        num_params=num_params,
+        seq_len=MAX_LENGTH,
+        global_batch_size=BATCH_SIZE,
+        grad_accum_steps=GRAD_ACCUM_STEPS,
+    )
+    print(f"Model parameters: {num_params:,}")
+    print(f"Tokens per step: {BATCH_SIZE * GRAD_ACCUM_STEPS * MAX_LENGTH:,}")
+    print(f"GPU peak TFLOPs: {gpu_peak_tflops}")
+    print(f"Estimated FLOPs per step: {flops_per_step:.2e}")
+
     collator = CausalLMCollator(tokenizer, MAX_LENGTH)
 
     g = torch.Generator()
@@ -185,7 +119,7 @@ def main():
     loader = DataLoader(
         dataset,
         batch_size=BATCH_SIZE,
-        shuffle=True,
+        shuffle=False,
         generator=g,
         num_workers=0,
         collate_fn=collator,
@@ -204,6 +138,8 @@ def main():
         total_steps,
     )
 
+    print(f"DEBUG: len(loader)={len(loader)}, steps_per_epoch={steps_per_epoch}, total_steps={total_steps}, warmup_steps={warmup_steps}")
+
     use_fp16 = USE_AMP and DTYPE == torch.float16 and device.type == "cuda"
     scaler = torch.cuda.amp.GradScaler(enabled=use_fp16)
 
@@ -211,6 +147,8 @@ def main():
 
     step = 0
     start_time = time.time()
+    last_log_time = start_time
+    last_log_step = 0
 
     for epoch in range(NUM_EPOCHS):
         for it, batch in enumerate(loader):
@@ -231,7 +169,7 @@ def main():
                 if scaler.is_enabled():
                     scaler.unscale_(optimizer)
 
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), MAX_GRAD_NORM)
 
                 grad_norm = global_l2_norm(
                     p.grad for p in model.parameters() if p.grad is not None
@@ -253,28 +191,52 @@ def main():
                 else:
                     max_mem = 0
 
-                record = {
-                    "step": step,
-                    "epoch": epoch,
-                    "epoch_progress": f"{step / steps_per_epoch:.2f}",
-                    "loss": float(loss.item() * GRAD_ACCUM_STEPS),
-                    "grad_norm": grad_norm,
-                    "param_norm": param_norm,
-                    "lr": optimizer.param_groups[0]["lr"],
-                    "max_mem_bytes": max_mem,
-                    "time_s": time.time() - start_time,
-                }
+                    record = {
+                        "step": step,
+                        "epoch": epoch,
+                        "epoch_progress": f"{step / steps_per_epoch:.2f}",
+                        "loss": float(loss.item() * GRAD_ACCUM_STEPS),
+                        "grad_norm": grad_norm,
+                        "param_norm": param_norm,
+                        "lr": optimizer.param_groups[0]["lr"],
+                        "max_mem_bytes": max_mem,
+                    }
 
-                if step % LOG_EVERY == 0:
+                if step % LOG_EVERY == 0 and step > 0:
+                    # Compute time per LOG_EVERY steps and MFU
+                    current_time = time.time()
+                    steps_since_last_log = step - last_log_step
+                    time_per_step = (current_time - last_log_time) / steps_since_last_log if steps_since_last_log > 0 else 0
+                    time_per_log_interval = current_time - last_log_time
+                    
+                    mfu = compute_mfu(
+                        flops_per_step=flops_per_step,
+                        step_time_seconds=time_per_step,
+                        gpu_peak_flops=gpu_peak_flops,
+                        num_devices=1,
+                    )
+                    
+                        record["time_per_step"] = time_per_step
+                        record["mfu"] = mfu
+                        
+                        last_log_time = current_time
+                        last_log_step = step
+                        
+                        print(json.dumps(record))
+                        wandb.log({
+                            "loss": record["loss"],
+                            "grad_norm": record["grad_norm"],
+                            "param_norm": record["param_norm"],
+                            "lr": record["lr"],
+                            "max_mem_bytes": record["max_mem_bytes"],
+                            "time_per_step": time_per_step,
+                            "mfu": mfu,
+                        }, step=step)
+                elif step == 0:
+                    # First step - just initialize timing
+                    last_log_time = time.time()
+                    last_log_step = 0
                     print(json.dumps(record))
-                    wandb.log({
-                        "loss": record["loss"],
-                        "grad_norm": record["grad_norm"],
-                        "param_norm": record["param_norm"],
-                        "lr": record["lr"],
-                        "max_mem_bytes": record["max_mem_bytes"],
-                        "time_s": record["time_s"],
-                    })
 
                 if step in (5, 20, 100):
                     save_checkpoint(

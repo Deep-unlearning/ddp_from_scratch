@@ -52,5 +52,4 @@ class ShardSampler(Sampler[int]):
             yield idx
 
     def __len__(self):
-        # TODO: return num_samples
         return self.num_samples
