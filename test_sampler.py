@@ -4,7 +4,7 @@ from datetime import timedelta
 import torch
 import torch.distributed as dist
 
-from sampler import ShardSampler
+from ddp import ShardSampler
 
 
 def rank0_print(rank: int, *msg):

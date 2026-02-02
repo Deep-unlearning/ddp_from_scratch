@@ -38,7 +38,7 @@
 
 ---
 
-## Step 3 — Naive Data Parallelism (Correctness)
+## Step 3 — Naive Data Parallelism (Correctness) ✅
 
 * [x] Broadcast model parameters from rank 0
 * [x] Backward pass on each rank
@@ -50,45 +50,11 @@
 
 ---
 
-## Step 4 — Autograd Hooks + Bucketing (Real DDP)
+## Step 4 — Autograd Hooks + Bucketing (Real DDP) ✅
 
-* [ ] Register backward hooks per parameter
-* [ ] Gradient bucketing
-* [ ] Async all-reduce per bucket
-* [ ] Overlap backward compute with communication
-* [ ] Single sync point before optimizer step
-
----
-
-## Step 5 — Correctness Harness
-
-* [ ] Per-rank parameter checksum
-* [ ] Gradient norm scaling validation
-* [ ] Single-GPU vs DDP loss curve comparison
-* [ ] Resume-from-checkpoint equivalence
-
----
-
-## Step 6 — Performance Tuning
-
-* [ ] Bucket size tuning
-* [ ] Gradient accumulation without early sync
-* [ ] Mixed precision stability tests
-* [ ] Throughput vs GPU count benchmark
-
----
-
-## Step 7 — Polish / Extras
-
-* [ ] Clean shutdown & error handling
-* [ ] Timeout / deadlock detection
-* [ ] Optional: unused parameter detection
-* [ ] Optional: ZeRO / optimizer sharding
-* [ ] Optional: gradient compression
-
----
-
-### Definition of “Done”
-
-* DDP run matches single-GPU golden run (within tolerance)
-* Near-linear scaling on multiple GPUs
+* [x] Register backward hooks per parameter
+* [x] Gradient bucketing
+* [x] Async all-reduce per bucket
+* [x] Overlap backward compute with communication
+* [x] Single sync point before optimizer step
+* [x] `no_sync()` context manager for gradient accumulation

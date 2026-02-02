@@ -19,22 +19,20 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from config import (
+from utils import (
     MODEL_NAME, DATASET_NAME, NUM_EPOCHS, BATCH_SIZE_DDP as BATCH_SIZE,
     GRAD_ACCUM_STEPS, MAX_LENGTH, LR, WEIGHT_DECAY, WARMUP_RATIO,
     MAX_GRAD_NORM, LOG_EVERY, SEED, USE_AMP, DTYPE,
-)
-from utils import (
-    set_seed, tensor_checksum, global_l2_norm,
+    set_seed, global_l2_norm,
     get_gpu_peak_tflops, estimate_flops_per_step, compute_mfu,
+    CausalLMCollator,
 )
-from data import CausalLMCollator
-from distributed import (
+from ddp import (
     get_rank, get_world_size, get_local_rank, is_main_process,
     setup_distributed, cleanup_distributed,
     broadcast_model, sync_gradients,
+    ShardSampler, GradientBucketer,
 )
-from sampler import ShardSampler
 import torch.distributed as dist
 
 # -----------------
@@ -82,7 +80,7 @@ def main():
         print(f"Starting DDP training with {world_size} processes")
         wandb.init(
             project="smollm2-360m-instruct",
-            name="ddp_naive",
+            name="ddp_bucket_with_gradacc",
             config=dict(
                 model=MODEL_NAME,
                 batch_size=BATCH_SIZE,
@@ -106,7 +104,8 @@ def main():
     
     # === 4. Broadcast model weights from rank 0 ===
     broadcast_model(model)
-    
+    bucketer = GradientBucketer(model, bucket_size_mb=25)  # Small buckets for testing
+
     # Calculate model stats for MFU (formula from PyTorch blog)
     num_params = sum(p.numel() for p in model.parameters())
     gpu_peak_tflops = get_gpu_peak_tflops()
@@ -120,7 +119,6 @@ def main():
     )
     
     if is_main_process():
-        print(f"Initial model checksum: {tensor_checksum(model)}")
         print(f"Model parameters: {num_params:,}")
         print(f"Global batch size: {global_batch_size} (per step: {global_batch_size * GRAD_ACCUM_STEPS})")
         print(f"Tokens per step: {global_batch_size * GRAD_ACCUM_STEPS * MAX_LENGTH:,}")
@@ -189,19 +187,25 @@ def main():
                 out = model(**batch)
                 loss = out.loss / GRAD_ACCUM_STEPS
             
-            if scaler.is_enabled():
-                scaler.scale(loss).backward()
+            if (it + 1) % GRAD_ACCUM_STEPS != 0:
+                with bucketer.no_sync():
+                    if scaler.is_enabled():
+                        scaler.scale(loss).backward()
+                    else:
+                        loss.backward()
             else:
-                loss.backward()
-            
+                if scaler.is_enabled():
+                    scaler.scale(loss).backward()
+                else:
+                    loss.backward()
+                        
             # Gradient accumulation boundary
             if (it + 1) % GRAD_ACCUM_STEPS == 0:
                 if scaler.is_enabled():
                     scaler.unscale_(optimizer)
                 
-                # Sync gradients across ranks
-                sync_gradients(model, world_size)
-                
+                bucketer.wait_for_all_reduces()
+                bucketer.reset()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), MAX_GRAD_NORM)
                 
                 grad_norm = global_l2_norm(
@@ -278,6 +282,7 @@ def main():
                             model, optimizer, scheduler, step, epoch,
                         )
                 step += 1
+            
             dist.barrier()
     
     # === 9. Final checkpoint and checksum ===
@@ -288,12 +293,7 @@ def main():
             model, optimizer, scheduler, step, epoch,
         )
         
-        checksum = tensor_checksum(model)
-        with open(f"{SAVE_DIR}/ddp_metrics.json", "w") as f:
-            json.dump({"final_checksum": checksum}, f, indent=2)
-        
         print("Training complete.")
-        print("Final checksum:", checksum)
         wandb.finish()
     dist.barrier()
     # === 10. Cleanup ===

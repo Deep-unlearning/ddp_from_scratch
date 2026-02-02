@@ -19,16 +19,14 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from config import (
+from utils import (
     MODEL_NAME, DATASET_NAME, NUM_EPOCHS, BATCH_SIZE_SINGLE_GPU as BATCH_SIZE,
     GRAD_ACCUM_STEPS, MAX_LENGTH, LR, WEIGHT_DECAY, WARMUP_RATIO,
     MAX_GRAD_NORM, LOG_EVERY, SEED, USE_AMP, DTYPE,
-)
-from utils import (
-    set_seed, tensor_checksum, global_l2_norm,
+    set_seed, global_l2_norm,
     get_gpu_peak_tflops, estimate_flops_per_step, compute_mfu,
+    CausalLMCollator,
 )
-from data import CausalLMCollator
 
 # -----------------
 # Config
@@ -253,14 +251,9 @@ def main():
     final_ckpt = f"{SAVE_DIR}/final.pt"
     save_checkpoint(final_ckpt, model, optimizer, scheduler, step, epoch)
 
-    checksum = tensor_checksum(model)
-    with open(f"{SAVE_DIR}/golden_metrics.json", "w") as f:
-        json.dump({"final_checksum": checksum}, f, indent=2)
-
     wandb.finish()
 
     print("Training complete.")
-    print("Final checksum:", checksum)
     print("Saved to:", SAVE_DIR)
 
 

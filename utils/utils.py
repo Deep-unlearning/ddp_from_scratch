@@ -142,3 +142,5 @@ def global_l2_norm(tensors) -> float:
                 sq_sum = torch.zeros((), device=device)
             sq_sum += (t.float() ** 2).sum()
     return float(torch.sqrt(sq_sum).item()) if sq_sum is not None else 0.0
+
+

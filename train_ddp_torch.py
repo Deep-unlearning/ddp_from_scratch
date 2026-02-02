@@ -22,17 +22,15 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from config import (
+from utils import (
     MODEL_NAME, DATASET_NAME, NUM_EPOCHS, BATCH_SIZE_DDP as BATCH_SIZE,
     GRAD_ACCUM_STEPS, MAX_LENGTH, LR, WEIGHT_DECAY, WARMUP_RATIO,
     MAX_GRAD_NORM, LOG_EVERY, SEED, USE_AMP, DTYPE,
-)
-from utils import (
-    set_seed, tensor_checksum, global_l2_norm,
+    set_seed, global_l2_norm,
     get_gpu_peak_tflops, estimate_flops_per_step, compute_mfu,
+    CausalLMCollator,
 )
-from data import CausalLMCollator
-from distributed import (
+from ddp import (
     get_rank, get_world_size, get_local_rank, is_main_process,
     setup_distributed, cleanup_distributed,
 )
@@ -83,7 +81,7 @@ def main():
         print(f"Starting PyTorch DDP training with {world_size} processes")
         wandb.init(
             project="smollm2-360m-instruct",
-            name="ddp_torch",
+            name="ddp_torch_ref_with_gradacc",
             config=dict(
                 model=MODEL_NAME,
                 batch_size=BATCH_SIZE,
@@ -122,7 +120,6 @@ def main():
     model = DDP(model, device_ids=[local_rank])
     
     if is_main_process():
-        print(f"Initial model checksum: {tensor_checksum(model)}")
         print(f"Model parameters: {num_params:,}")
         print(f"Global batch size: {global_batch_size} (per step: {global_batch_size * GRAD_ACCUM_STEPS})")
         print(f"Tokens per step: {global_batch_size * GRAD_ACCUM_STEPS * MAX_LENGTH:,}")
@@ -293,12 +290,7 @@ def main():
             model, optimizer, scheduler, step, epoch,
         )
         
-        checksum = tensor_checksum(model)
-        with open(f"{SAVE_DIR}/ddp_torch_metrics.json", "w") as f:
-            json.dump({"final_checksum": checksum}, f, indent=2)
-        
         print("Training complete.")
-        print("Final checksum:", checksum)
         wandb.finish()
     
     # === 10. Cleanup ===
