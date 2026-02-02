@@ -129,24 +129,6 @@ def set_seed(seed: int, rank: int = 0):
     torch.backends.cudnn.benchmark = False
 
 
-def tensor_checksum(model: torch.nn.Module) -> str:
-    """
-    Compute a stable SHA-256 checksum of model parameters.
-    
-    For DDP-wrapped models, automatically unwraps to access underlying module.
-    """
-    # Handle DDP-wrapped models
-    if hasattr(model, 'module'):
-        model = model.module
-    
-    h = hashlib.sha256()
-    with torch.no_grad():
-        for p in model.parameters():
-            t = p.detach().float().cpu().contiguous().view(-1)
-            h.update(t.numpy().tobytes())
-    return h.hexdigest()
-
-
 def global_l2_norm(tensors) -> float:
     """Compute global L2 norm over a list of tensors."""
     sq_sum = None
