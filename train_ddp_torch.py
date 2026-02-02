@@ -101,7 +101,7 @@ def main():
     # === 3. Load model ===
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
-        torch_dtype=DTYPE if device.type == "cuda" else None,
+        dtype=DTYPE if device.type == "cuda" else None,
     ).to(device)
     model.train()
     
@@ -169,7 +169,7 @@ def main():
     
     # === 7. AMP setup ===
     use_fp16 = USE_AMP and DTYPE == torch.float16 and device.type == "cuda"
-    scaler = torch.cuda.amp.GradScaler(enabled=use_fp16)
+    scaler = torch.amp.GradScaler('cuda', enabled=use_fp16)
     
     optimizer.zero_grad(set_to_none=True)
     
@@ -189,8 +189,8 @@ def main():
             sync_context = model.no_sync() if (it + 1) % GRAD_ACCUM_STEPS != 0 else nullcontext()
             
             with sync_context:
-                with torch.cuda.amp.autocast(
-                    enabled=USE_AMP and device.type == "cuda", dtype=DTYPE
+                with torch.amp.autocast(
+                    'cuda', enabled=USE_AMP and device.type == "cuda", dtype=DTYPE
                 ):
                     out = model(**batch)
                     loss = out.loss / GRAD_ACCUM_STEPS
