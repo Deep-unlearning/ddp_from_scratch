@@ -58,3 +58,34 @@
 * [x] Overlap backward compute with communication
 * [x] Single sync point before optimizer step
 * [x] `no_sync()` context manager for gradient accumulation
+
+---
+
+## Step 5 — ZeRO Stage 1 (Optimizer State Partitioning)
+
+* [ ] Partition optimizer state (e.g. Adam momentum, variance) across ranks
+* [ ] Each rank holds only `1 / world_size` of optimizer state per parameter
+* [ ] Gather optimizer state on demand when applying updates
+* [ ] Reduce memory per rank by ~4× for Adam-style optimizers
+* [ ] Verify training matches DDP baseline (same loss trajectory, checkpoint parity)
+
+---
+
+## Step 6 — ZeRO Stage 2 (Gradient + Optimizer State Partitioning)
+
+* [ ] Partition gradients so each rank owns `1 / world_size` of gradients
+* [ ] All-reduce only the gradient slice owned by each rank (reduce-scatter style)
+* [ ] Combine with ZeRO-1: partition both gradients and optimizer state
+* [ ] Further reduce memory (gradient buffers no longer replicated)
+* [ ] Verify correctness vs DDP / ZeRO-1
+
+---
+
+## Step 7 — ZeRO Stage 3 (Full Parameter Sharding)
+
+* [ ] Partition model parameters across ranks; each rank holds `1 / world_size`
+* [ ] All-gather parameters (or submodules) on demand before forward
+* [ ] Free gathered parameters after backward for that layer (or use stream/cache)
+* [ ] Combine with ZeRO-1 + ZeRO-2 for full redundancy removal
+* [ ] Enable training models that do not fit on a single GPU
+* [ ] Verify correctness and memory scaling with world size
